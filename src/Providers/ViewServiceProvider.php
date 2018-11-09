@@ -12,12 +12,16 @@ namespace PIXNET\MemcachedView\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use Illuminate\View\ViewServiceProvider as LaravelViewProvider;
+use Illuminate\View\Compilers\BladeCompiler as LaravelBladeCompiler;
+use Illuminate\View\Engines\CompilerEngine as LaravelCompilerEngine;
+use Illuminate\View\Engines\PhpEngine as LaravelPhpEngine;
 use PIXNET\MemcachedView\Engines\CompilerEngine;
 use PIXNET\MemcachedView\Engines\PhpEngine;
 use PIXNET\MemcachedView\Compilers\BladeCompiler;
 
 class ViewServiceProvider extends LaravelViewProvider
 {
+    protected $isMemcachedEnabled;
     /**
      * registerBladeEngine
      *
@@ -28,18 +32,29 @@ class ViewServiceProvider extends LaravelViewProvider
     public function registerBladeEngine($resolver)
     {
         $app = $this->app;
-        $storage = $app->make('MemcacheStorage');
-        $app->singleton('blade.compiler', function ($app) use ($storage) {
+        $this->isMemcachedEnabled = in_array(config('cache.default'), ['memcached', 'redis']);
 
-            $cache = $app['config']['view.compiled'];
-
-            return new BladeCompiler($storage, $app['files'], $cache);
+        $app->singleton('blade.compiler', function () {
+            if(!$this->isMemcachedEnabled)
+            {
+                return new LaravelBladeCompiler(
+                    $this->app['files'], $this->app['config']['view.compiled']
+                );
+            }
+            $storage = $this->app->make('MemcacheStorage');
+            $cache = $this->app['config']['view.compiled'];
+            
+            return new BladeCompiler($storage, $this->app['files'], $cache);
         });
 
-        $resolver->register('blade', function () use ($app, $storage) {
-            return new CompilerEngine($app['blade.compiler'], $storage);
+        $resolver->register('blade', function () {
+            if(!$this->isMemcachedEnabled)
+            {
+                return new LaravelCompilerEngine($this->app['blade.compiler']);
+            }
+            $storage = $this->app->make('MemcacheStorage');
+            return new CompilerEngine($this->app['blade.compiler'], $storage);
         });
-
     }
 
     /**
@@ -50,8 +65,16 @@ class ViewServiceProvider extends LaravelViewProvider
      */
     public function registerPhpEngine($resolver)
     {
-        $resolver->register('php', function () {
-            return new PhpEngine;
-        });
+        if(!$this->isMemcachedEnabled)
+        {
+            $resolver->register('php', function () {
+                return new LaravelPhpEngine;
+            });
+        } else {
+            $resolver->register('php', function () {
+                return new PhpEngine;
+            });
+        }
+
     }
 }

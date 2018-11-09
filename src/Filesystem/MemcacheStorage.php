@@ -10,36 +10,31 @@
 
 namespace PIXNET\MemcachedView\Filesystem;
 
+use Illuminate\Support\Facades\Cache;
+
 class MemcacheStorage extends \Illuminate\Filesystem\Filesystem
 {
-
-    protected $memcached;
-
-    public function __construct()
-    {
-        $this->memcached = new \Memcached;
-        $this->memcached->addServers(config('cache.stores.memcached.servers'));
-    }
-
     public function exists($key)
     {
-        return !empty($this->get($key));
+        return Cache::has($key);
     }
 
     public function get($key, $lock = false)
     {
-        $value = $this->memcached->get($key);
+        $value = Cache::get($key);
+
         return $value ? $value['content'] : null;
     }
 
     public function put($key, $value, $lock = false)
     {
-        return $this->memcached->set($key, ['content' => $value, 'modified' => time()]);
+        return Cache::add($key, ['content' => $value, 'modified' => time()], 5);
     }
 
     public function lastModified($key)
     {
-        $value = $this->memcached->get($key);
+        $value = Cache::get($key);
+
         return $value ? $value['modified'] : null;
     }
 }
